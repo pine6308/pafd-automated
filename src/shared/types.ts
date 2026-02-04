@@ -2,22 +2,36 @@
  * 健康提醒 - 共享类型定义
  */
 
-export type ActivityType = 'stand' | 'water' | 'pelvic' | 'neck'
+// 提醒类型
+export type ReminderType = 'standup' | 'water' | 'kegel' | 'neck'
 
+// 提醒配置
 export interface ReminderConfig {
-  /** 提醒间隔（分钟） */
-  intervalMinutes: number
-  /** 是否启用 */
+  id: ReminderType
+  name: string
+  icon: string
   enabled: boolean
-  /** 活动类型 */
-  activityType: ActivityType
+  intervalMinutes: number
+  lastTriggered?: number // 存时间戳，electron-store 不宜直接存 Date
 }
 
+// 完成记录
+export interface CompletionRecord {
+  type: ReminderType
+  completedAt: number
+}
+
+// 提醒状态（供 IPC 返回）
+export interface ReminderStatus {
+  running: boolean
+  configs: ReminderConfig[]
+}
+
+// 以下保留兼容
+export type ActivityType = 'stand' | 'water' | 'pelvic' | 'neck'
+
 export interface AppSettings {
-  /** 是否开机自启 */
   launchAtLogin: boolean
-  /** 勿扰时段开始（如 "22:00"） */
   doNotDisturbStart?: string
-  /** 勿扰时段结束（如 "08:00"） */
   doNotDisturbEnd?: string
 }

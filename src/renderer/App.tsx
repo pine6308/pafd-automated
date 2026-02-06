@@ -24,6 +24,11 @@ export default function App() {
             项目初始化成功 ✅
           </span>
         </div>
+
+        {/* 提醒功能入口提示 */}
+        <p className="text-sm text-gray-500 pt-6 border-t border-gray-200/60">
+          提醒功能在<strong>菜单栏</strong>：点击屏幕顶部右侧的 ❤️ 图标，右键选择「开始提醒」即可收到定时通知。
+        </p>
       </div>
     </div>
   )

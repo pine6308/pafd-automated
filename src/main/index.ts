@@ -128,7 +128,7 @@ function setupIpc(): void {
 app.whenReady().then(() => {
   reminderManager.setOnNotificationClick(() => showWindow())
 
-  createWindow()
+  mainWindow = createWindow()
 
   createTray()
 

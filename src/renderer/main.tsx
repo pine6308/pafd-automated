@@ -8,8 +8,13 @@ if (!rootEl) {
   throw new Error('Root element #root not found')
 }
 
-ReactDOM.createRoot(rootEl).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-)
+try {
+  ReactDOM.createRoot(rootEl).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  )
+} catch (err) {
+  console.error('Failed to mount app:', err)
+  rootEl.innerHTML = `<p style="padding: 1rem; color: #b91c1c;">加载失败，请刷新或重启应用。</p>`
+}

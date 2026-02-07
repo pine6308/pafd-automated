@@ -15,16 +15,46 @@ function createWindow(): BrowserWindow {
     height: 600,
     title: '健康提醒助手',
     webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
     },
   })
 
   if (isDev) {
-    win.loadURL(process.env.VITE_DEV_SERVER_URL!)
-    win.webContents.openDevTools()
+    const devUrl = process.env.VITE_DEV_SERVER_URL!
+    let loadRetries = 0
+    const maxRetries = 30
+
+    const tryLoad = () => {
+      win.loadURL(devUrl)
+    }
+
+    const onFailLoad = (
+      _event: any,
+      errorCode: number,
+      _errorDescription: string,
+      _validatedURL: string,
+      isMainFrame: boolean
+    ) => {
+      if (!isMainFrame || errorCode === -3) return
+      if (loadRetries < maxRetries) {
+        loadRetries += 1
+        setTimeout(tryLoad, 2000)
+      }
+    }
+
+    win.webContents.on('did-fail-load', onFailLoad)
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.removeListener('did-fail-load', onFailLoad)
+    })
+
+    // 先让窗口显示，下一帧再加载 URL，避免阻塞首帧绘制
+    setImmediate(() => tryLoad())
+    setTimeout(() => win.webContents.openDevTools(), 600)
   } else {
-    win.loadFile(path.join(__dirname, '../renderer/index.html'))
+    // 生产：renderer 由 Vite 构建到 dist/renderer
+    win.loadFile(path.join(__dirname, '../../dist/renderer/index.html'))
   }
 
   win.on('close', (e) => {
@@ -92,18 +122,19 @@ function updateTrayMenu(): void {
 
 function createTray(): void {
   const icon = getTrayImage(reminderManager.isRunning())
-  tray = new Tray(icon)
-  tray.setToolTip('健康提醒助手')
+  const newTray = new Tray(icon)
+  tray = newTray
+  newTray.setToolTip('健康提醒助手')
   updateTrayMenu()
   updateTrayIcon()
 
-  tray.on('click', () => {
+  newTray.on('click', () => {
     showWindow()
   })
 
-  tray.on('right-click', () => {
+  newTray.on('right-click', () => {
     updateTrayMenu()
-    tray!.popUpContextMenu()
+    newTray.popUpContextMenu()
   })
 }
 
@@ -123,6 +154,19 @@ function setupIpc(): void {
   ipcMain.handle('get-reminder-status', () => {
     return reminderManager.getStatus()
   })
+
+  ipcMain.handle(
+    'update-reminder-config',
+    (_event: any, configs: Parameters<typeof reminderManager.setConfigs>[0]) => {
+      reminderManager.setConfigs(configs)
+      if (reminderManager.isRunning()) {
+        reminderManager.stop()
+        reminderManager.start()
+        updateTrayIcon()
+      }
+      return reminderManager.getStatus()
+    }
+  )
 }
 
 app.whenReady().then(() => {

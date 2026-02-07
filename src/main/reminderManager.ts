@@ -1,9 +1,16 @@
 import { Notification } from 'electron'
 import Store from 'electron-store'
-import type { ReminderConfig, ReminderType } from '../shared/types'
+import type {
+  ReminderConfig,
+  ReminderType,
+  CompletionsToday,
+  NextTriggerTimes,
+  ReminderStatus,
+} from '../shared/types'
 
 const STORE_KEY = 'reminder-configs'
 const RUNNING_KEY = 'reminder-running'
+const COMPLETIONS_KEY = 'reminder-completions'
 
 const DEFAULT_CONFIGS: ReminderConfig[] = [
   { id: 'standup', name: '站起来', icon: 'stand', enabled: true, intervalMinutes: 45 },
@@ -36,8 +43,19 @@ const NOTIFICATION_MESSAGES: Record<
 
 export type OnNotificationClick = () => void
 
+const EMPTY_COMPLETIONS: CompletionsToday = {
+  standup: 0,
+  water: 0,
+  kegel: 0,
+  neck: 0,
+}
+
 export class ReminderManager {
-  private store = new Store<{ [STORE_KEY]: ReminderConfig[]; [RUNNING_KEY]?: boolean }>()
+  private store = new Store<{
+    [STORE_KEY]: ReminderConfig[]
+    [RUNNING_KEY]?: boolean
+    [COMPLETIONS_KEY]?: Array<{ type: ReminderType; completedAt: number }>
+  }>()
   private intervals: Map<ReminderType, NodeJS.Timeout> = new Map()
   private onNotificationClick: OnNotificationClick = () => {}
 
@@ -71,12 +89,55 @@ export class ReminderManager {
     n.show()
   }
 
+  private addCompletion(type: ReminderType): void {
+    const list = this.store.get(COMPLETIONS_KEY, [])
+    list.push({ type, completedAt: Date.now() })
+    this.store.set(COMPLETIONS_KEY, list)
+  }
+
   private trigger(type: ReminderType): void {
+    const now = Date.now()
     this.showNotification(type)
+    this.addCompletion(type)
     const configs = this.getConfigs().map((c) =>
-      c.id === type ? { ...c, lastTriggered: Date.now() } : c
+      c.id === type ? { ...c, lastTriggered: now } : c
     )
     this.setConfigs(configs)
+  }
+
+  private getCompletionsToday(): CompletionsToday {
+    const list = this.store.get(COMPLETIONS_KEY, []) as Array<{
+      type: ReminderType
+      completedAt: number
+    }>
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const todayStartTs = todayStart.getTime()
+    const out = { ...EMPTY_COMPLETIONS }
+    list.forEach(({ type, completedAt }) => {
+      if (completedAt >= todayStartTs) out[type] += 1
+    })
+    return out
+  }
+
+  private getNextTriggerTimes(): NextTriggerTimes {
+    const configs = this.getConfigs()
+    const running = this.isRunning()
+    const out: NextTriggerTimes = {
+      standup: null,
+      water: null,
+      kegel: null,
+      neck: null,
+    }
+    if (!running) return out
+    configs.forEach((c) => {
+      if (!c.enabled) return
+      const last = c.lastTriggered
+      if (last) {
+        out[c.id] = last + c.intervalMinutes * 60 * 1000
+      }
+    })
+    return out
   }
 
   private schedule(config: ReminderConfig): void {
@@ -104,10 +165,12 @@ export class ReminderManager {
     return this.store.get(RUNNING_KEY, false)
   }
 
-  getStatus(): { running: boolean; configs: ReminderConfig[] } {
+  getStatus(): ReminderStatus {
     return {
       running: this.isRunning(),
       configs: this.getConfigs(),
+      completionsToday: this.getCompletionsToday(),
+      nextTriggerTimes: this.getNextTriggerTimes(),
     }
   }
 }

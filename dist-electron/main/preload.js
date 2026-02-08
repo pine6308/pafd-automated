@@ -6,4 +6,6 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     startReminders: () => electron_1.ipcRenderer.invoke('start-reminders'),
     stopReminders: () => electron_1.ipcRenderer.invoke('stop-reminders'),
     updateReminderConfig: (configs) => electron_1.ipcRenderer.invoke('update-reminder-config', configs),
+    markAsCompleted: (type) => electron_1.ipcRenderer.invoke('mark-as-completed', type),
+    getTodayFlowers: () => electron_1.ipcRenderer.invoke('get-today-flowers'),
 });

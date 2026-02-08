@@ -6,11 +6,14 @@ import type {
   CompletionsToday,
   NextTriggerTimes,
   ReminderStatus,
+  FlowerData,
+  FlowersToday,
 } from '../shared/types'
 
 const STORE_KEY = 'reminder-configs'
 const RUNNING_KEY = 'reminder-running'
 const COMPLETIONS_KEY = 'reminder-completions'
+const FLOWERS_KEY_PREFIX = 'flowers' // flowers:YYYY-MM-DD:type
 
 const DEFAULT_CONFIGS: ReminderConfig[] = [
   { id: 'standup', name: '站起来', icon: 'stand', enabled: true, intervalMinutes: 45 },
@@ -51,13 +54,10 @@ const EMPTY_COMPLETIONS: CompletionsToday = {
 }
 
 export class ReminderManager {
-  private store = new Store<{
-    [STORE_KEY]: ReminderConfig[]
-    [RUNNING_KEY]?: boolean
-    [COMPLETIONS_KEY]?: Array<{ type: ReminderType; completedAt: number }>
-  }>()
+  private store = new Store<Record<string, any>>()
   private intervals: Map<ReminderType, NodeJS.Timeout> = new Map()
   private onNotificationClick: OnNotificationClick = () => {}
+  private midnightTimer: NodeJS.Timeout | null = null
 
   getConfigs(): ReminderConfig[] {
     const saved = this.store.get(STORE_KEY)
@@ -76,12 +76,69 @@ export class ReminderManager {
     this.onNotificationClick = fn
   }
 
+  // 计算距离下一个午夜的毫秒数
+  private getMillisecondsUntilMidnight(): number {
+    const now = new Date()
+    const tomorrow = new Date(now)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    tomorrow.setHours(0, 0, 0, 0)
+    return tomorrow.getTime() - now.getTime()
+  }
+
+  // 清理昨天及更早的提醒记录
+  private cleanOldCompletions(): void {
+    const list = this.store.get(COMPLETIONS_KEY, []) as Array<{
+      type: ReminderType
+      completedAt: number
+    }>
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const todayStartTs = todayStart.getTime()
+    
+    // 只保留今天的记录
+    const todayList = list.filter(({ completedAt }) => completedAt >= todayStartTs)
+    this.store.set(COMPLETIONS_KEY, todayList)
+    
+    console.log(`Cleaned old completions. Kept ${todayList.length} today's records.`)
+  }
+
+  // 设置午夜刷新定时器
+  private setupMidnightRefresh(): void {
+    // 清除现有定时器
+    if (this.midnightTimer) {
+      clearTimeout(this.midnightTimer)
+    }
+
+    // 计算到午夜的时间
+    const msUntilMidnight = this.getMillisecondsUntilMidnight()
+
+    // 设置定时器在午夜执行
+    this.midnightTimer = setTimeout(() => {
+      console.log('Midnight refresh triggered at', new Date().toISOString())
+      // 清理旧数据
+      this.cleanOldCompletions()
+      // 午夜刷新后，重新设置下一个午夜的定时器
+      this.setupMidnightRefresh()
+    }, msUntilMidnight)
+
+    console.log(
+      `Midnight refresh scheduled in ${Math.round(msUntilMidnight / 1000 / 60)} minutes`
+    )
+  }
+
   private showNotification(type: ReminderType): void {
     const msg = NOTIFICATION_MESSAGES[type]
     if (!msg) return
+    
+    // 获取今日小红花数量
+    const flowers = this.getTodayFlowers(type)
+    const bodyWithFlowers = `${msg.body}\n\n🌸 今日已获得 ${flowers} 朵小红花`
+    
     const n = new Notification({
       title: msg.title,
-      body: msg.body,
+      body: bodyWithFlowers,
+      silent: false,
+      urgency: 'normal',
     })
     n.on('click', () => {
       this.onNotificationClick()
@@ -140,6 +197,63 @@ export class ReminderManager {
     return out
   }
 
+  // 获取今日日期字符串 YYYY-MM-DD
+  private getTodayDateString(): string {
+    const today = new Date()
+    const year = today.getFullYear()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const day = String(today.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  // 获取小红花存储键
+  private getFlowerKey(date: string, type: ReminderType): string {
+    return `${FLOWERS_KEY_PREFIX}:${date}:${type}`
+  }
+
+  // 获取今日某类型的小红花数量
+  getTodayFlowers(type: ReminderType): number {
+    const today = this.getTodayDateString()
+    const key = this.getFlowerKey(today, type)
+    const data = this.store.get(key) as FlowerData | undefined
+    return data?.count ?? 0
+  }
+
+  // 获取今日所有小红花
+  getAllTodayFlowers(): FlowersToday {
+    const today = this.getTodayDateString()
+    const result: FlowersToday = {
+      standup: 0,
+      water: 0,
+      kegel: 0,
+      neck: 0,
+    }
+    ;(['standup', 'water', 'kegel', 'neck'] as const).forEach((type) => {
+      const key = this.getFlowerKey(today, type)
+      const data = this.store.get(key) as FlowerData | undefined
+      result[type] = data?.count ?? 0
+    })
+    return result
+  }
+
+  // 增加小红花
+  private addFlower(type: ReminderType): void {
+    const today = this.getTodayDateString()
+    const key = this.getFlowerKey(today, type)
+    const existing = this.store.get(key) as FlowerData | undefined
+    const newData: FlowerData = {
+      count: (existing?.count ?? 0) + 1,
+      lastUpdated: Date.now(),
+    }
+    this.store.set(key, newData)
+  }
+
+  // 标记已完成（用户主动完成，获得小红花）
+  markAsCompleted(type: ReminderType): FlowersToday {
+    this.addFlower(type)
+    return this.getAllTodayFlowers()
+  }
+
   private schedule(config: ReminderConfig): void {
     if (!config.enabled || config.intervalMinutes <= 0) return
     const ms = config.intervalMinutes * 60 * 1000
@@ -150,27 +264,37 @@ export class ReminderManager {
 
   start(): void {
     this.stop()
+    // 启动时先清理一次旧数据
+    this.cleanOldCompletions()
     const configs = this.getConfigs()
     configs.forEach((c) => this.schedule(c))
     this.store.set(RUNNING_KEY, true)
+    // 启动时设置午夜刷新定时器
+    this.setupMidnightRefresh()
   }
 
   stop(): void {
     this.intervals.forEach((id) => clearInterval(id))
     this.intervals.clear()
     this.store.set(RUNNING_KEY, false)
+    // 停止时清除午夜刷新定时器
+    if (this.midnightTimer) {
+      clearTimeout(this.midnightTimer)
+      this.midnightTimer = null
+    }
   }
 
   isRunning(): boolean {
     return this.store.get(RUNNING_KEY, false)
   }
 
-  getStatus(): ReminderStatus {
+  getStatus(): ReminderStatus & { flowersToday: FlowersToday } {
     return {
       running: this.isRunning(),
       configs: this.getConfigs(),
       completionsToday: this.getCompletionsToday(),
       nextTriggerTimes: this.getNextTriggerTimes(),
+      flowersToday: this.getAllTodayFlowers(),
     }
   }
 }

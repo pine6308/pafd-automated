@@ -35,6 +35,26 @@ export interface ReminderStatus {
   nextTriggerTimes: NextTriggerTimes
 }
 
+// 小红花数据结构
+export interface FlowerData {
+  count: number
+  lastUpdated: number
+}
+
+// 小红花存储键值（按日期和类型）
+export type FlowerRecord = Record<string, FlowerData> // key: "flowers:YYYY-MM-DD:type"
+
+// 提醒完成记录（用于小红花系统）
+export interface ReminderCompletion {
+  id: string // 唯一标识
+  type: ReminderType
+  completedAt: number
+  earnedFlower: boolean // 是否已获得小红花
+}
+
+// 今日小红花统计
+export type FlowersToday = Record<ReminderType, number>
+
 // 以下保留兼容
 export type ActivityType = 'stand' | 'water' | 'pelvic' | 'neck'
 

@@ -148,6 +148,13 @@ function setupIpc() {
         }
         return reminderManager_1.reminderManager.getStatus();
     });
+    electron_1.ipcMain.handle('mark-as-completed', (_event, type) => {
+        const flowers = reminderManager_1.reminderManager.markAsCompleted(type);
+        return { success: true, flowersToday: flowers };
+    });
+    electron_1.ipcMain.handle('get-today-flowers', () => {
+        return reminderManager_1.reminderManager.getAllTodayFlowers();
+    });
 }
 electron_1.app.whenReady().then(() => {
     reminderManager_1.reminderManager.setOnNotificationClick(() => showWindow());

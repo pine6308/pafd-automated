@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { FlowersToday } from '../shared/types'
 
 export type ReminderType = 'standup' | 'water' | 'kegel' | 'neck'
 
@@ -12,6 +13,7 @@ interface ReminderState {
   isRunning: boolean
   completions: Record<ReminderType, number>
   nextTriggerTimes: Record<ReminderType, number | null>
+  flowers: FlowersToday
   isLoading: boolean
   error: string | null
   fetchStatus: () => Promise<void>
@@ -19,6 +21,8 @@ interface ReminderState {
   setInterval: (type: ReminderType, minutes: number) => Promise<void>
   startReminders: () => Promise<void>
   stopReminders: () => Promise<void>
+  markAsCompleted: (type: ReminderType) => Promise<void>
+  fetchFlowers: () => Promise<void>
 }
 
 const defaultReminders: Record<ReminderType, ReminderItem> = {
@@ -42,6 +46,13 @@ const emptyNext: Record<ReminderType, number | null> = {
   neck: null,
 }
 
+const emptyFlowers: FlowersToday = {
+  standup: 0,
+  water: 0,
+  kegel: 0,
+  neck: 0,
+}
+
 function applyStatus(
   set: (fn: (s: ReminderState) => Partial<ReminderState>) => void,
   status: {
@@ -49,6 +60,7 @@ function applyStatus(
     configs: Array<{ id: string; enabled: boolean; intervalMinutes: number }>
     completionsToday: Record<string, number>
     nextTriggerTimes: Record<string, number | null>
+    flowersToday?: FlowersToday
   }
 ) {
   const reminders = { ...defaultReminders }
@@ -66,11 +78,13 @@ function applyStatus(
     completions[id] = status.completionsToday[id] ?? 0
     nextTriggerTimes[id] = status.nextTriggerTimes[id] ?? null
   })
+  const flowers: FlowersToday = status.flowersToday ?? { ...emptyFlowers }
   set(() => ({
     reminders,
     isRunning: status.running,
     completions,
     nextTriggerTimes,
+    flowers,
     error: null,
   }))
 }
@@ -80,6 +94,7 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
   isRunning: false,
   completions: { ...emptyCompletions },
   nextTriggerTimes: { ...emptyNext },
+  flowers: { ...emptyFlowers },
   isLoading: false,
   error: null,
 
@@ -162,6 +177,34 @@ export const useReminderStore = create<ReminderState>((set, get) => ({
       }))
     } finally {
       set(() => ({ isLoading: false }))
+    }
+  },
+
+  markAsCompleted: async (type: ReminderType) => {
+    const api = window.electronAPI
+    if (!api) return
+    try {
+      const result = await api.markAsCompleted(type)
+      if (result.success) {
+        set((state) => ({
+          flowers: result.flowersToday,
+        }))
+      }
+    } catch (e) {
+      set(() => ({
+        error: e instanceof Error ? e.message : '标记完成失败',
+      }))
+    }
+  },
+
+  fetchFlowers: async () => {
+    const api = window.electronAPI
+    if (!api) return
+    try {
+      const flowers = await api.getTodayFlowers()
+      set(() => ({ flowers }))
+    } catch (e) {
+      console.error('Failed to fetch flowers:', e)
     }
   },
 }))

@@ -167,6 +167,15 @@ function setupIpc(): void {
       return reminderManager.getStatus()
     }
   )
+
+  ipcMain.handle('mark-as-completed', (_event: any, type: string) => {
+    const flowers = reminderManager.markAsCompleted(type as any)
+    return { success: true, flowersToday: flowers }
+  })
+
+  ipcMain.handle('get-today-flowers', () => {
+    return reminderManager.getAllTodayFlowers()
+  })
 }
 
 app.whenReady().then(() => {

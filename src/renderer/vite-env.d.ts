@@ -1,5 +1,20 @@
 /// <reference types="vite/client" />
 
+import type { FlowersToday } from '../shared/types'
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      getReminderStatus: () => Promise<any>
+      startReminders: () => Promise<any>
+      stopReminders: () => Promise<any>
+      updateReminderConfig: (configs: any[]) => Promise<any>
+      markAsCompleted: (type: string) => Promise<{ success: boolean; flowersToday: FlowersToday }>
+      getTodayFlowers: () => Promise<FlowersToday>
+    }
+  }
+}
+
 export interface ReminderConfigFromMain {
   id: string
   name: string
